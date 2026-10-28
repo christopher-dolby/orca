@@ -148,7 +148,8 @@ function openSplitPane(
 ): void {
   openTerminal(newPane, {
     ligatures: args.managerOptions.terminalLigaturesEnabled?.(),
-    inlineImages: args.managerOptions.terminalInlineImagesEnabled?.()
+    inlineImages: args.managerOptions.terminalInlineImagesEnabled?.(),
+    outputFolding: args.managerOptions.terminalOutputFolding?.()
   })
   applyPaneOpacity(args.panes.values(), newPane.id, args.styleOptions)
   applyDividerStyles(args.root, args.styleOptions)

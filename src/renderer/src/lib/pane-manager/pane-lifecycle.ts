@@ -24,6 +24,10 @@ import { attachInlineImages, detachInlineImages } from './pane-inline-images'
 import { installTerminalImeCandidateAnchor } from './terminal-ime-candidate-anchor'
 import { cancelPendingTerminalViewportPresents } from './pane-viewport-present'
 import { releaseReplayGuardsForDisposedTerminal } from '@/components/terminal-pane/replay-guard'
+import {
+  attachTerminalOutputFolding,
+  type TerminalOutputFoldingSettings
+} from './terminal-output-folding'
 
 export { createPaneDOM } from './pane-dom-creation'
 
@@ -31,7 +35,15 @@ export { createPaneDOM } from './pane-dom-creation'
 export function openTerminal(
   pane: ManagedPaneInternal,
   // Named rather than positional: two adjacent optional booleans swap silently.
-  { ligatures = false, inlineImages = false }: { ligatures?: boolean; inlineImages?: boolean } = {}
+  {
+    ligatures = false,
+    inlineImages = false,
+    outputFolding
+  }: {
+    ligatures?: boolean
+    inlineImages?: boolean
+    outputFolding?: TerminalOutputFoldingSettings
+  } = {}
 ): void {
   const {
     terminal,
@@ -100,6 +112,9 @@ export function openTerminal(
   if (pane.gpuRenderingEnabled) {
     attachWebgl(pane)
   }
+  if (outputFolding) {
+    pane.outputFolding = attachTerminalOutputFolding(terminal, outputFolding)
+  }
 
   attachPaneFitResizeObserver(pane)
 
@@ -156,6 +171,8 @@ export function disposePane(
   panes: Map<number, ManagedPaneInternal>
 ): void {
   cancelPendingTerminalViewportPresents(pane.terminal)
+  pane.outputFolding?.dispose()
+  pane.outputFolding = null
   if (pane.pendingInitialFitRafId != null) {
     cancelAnimationFrame(pane.pendingInitialFitRafId)
     pane.pendingInitialFitRafId = null

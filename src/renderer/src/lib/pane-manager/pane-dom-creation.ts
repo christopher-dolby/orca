@@ -1,5 +1,3 @@
-import { SearchAddon } from '@xterm/addon-search'
-import { SerializeAddon } from '@xterm/addon-serialize'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal } from '@xterm/xterm'
@@ -17,6 +15,7 @@ import { installGuardedLinkProviderRegistration } from './terminal-link-provider
 import { installWindowsCtrlAltChordRepair } from './terminal-windows-ctrl-alt-chord-classification'
 import { installTerminalMouseEncodingTracker } from './terminal-mouse-encoding-tracker'
 import { StableCellFitAddon } from './terminal-stable-cell-fit-addon'
+import { FoldAwareSearchAddon, FoldAwareSerializeAddon } from './terminal-fold-aware-addons'
 
 function defaultLinkTooltipText(uri: string, openLinkHint: string): string {
   return `${uri} (${openLinkHint})`
@@ -54,7 +53,7 @@ export function createPaneDOM(
   // Why here: the tracker must see every byte, including the first snapshot replay.
   const mouseEncodingTrackerDisposable = installTerminalMouseEncodingTracker(terminal)
   const fitAddon = new StableCellFitAddon()
-  const searchAddon = new SearchAddon()
+  const searchAddon = new FoldAwareSearchAddon()
   const unicode11Addon = new Unicode11Addon()
   // Reject late tooltip results after hover changes so they cannot overwrite the current link.
   let linkTooltipHoverToken = 0
@@ -134,7 +133,7 @@ export function createPaneDOM(
     pendingWebglRefreshRafId: null,
     pendingObservedFitRafId: null,
     searchAddon,
-    serializeAddon: new SerializeAddon(),
+    serializeAddon: new FoldAwareSerializeAddon(),
     unicode11Addon,
     webLinksAddon,
     webglAddon: null,

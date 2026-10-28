@@ -21,7 +21,8 @@ export function createInitialManagedPane(
   host.root.appendChild(pane.container)
   openTerminal(pane, {
     ligatures: host.options.terminalLigaturesEnabled?.(),
-    inlineImages: host.options.terminalInlineImagesEnabled?.()
+    inlineImages: host.options.terminalInlineImagesEnabled?.(),
+    outputFolding: host.options.terminalOutputFolding?.()
   })
   host.setActivePaneId(pane.id)
   applyPaneOpacity(host.panes.values(), host.getActivePaneId(), host.getStyleOptions())

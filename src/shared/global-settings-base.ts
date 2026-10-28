@@ -7,6 +7,7 @@ import type { NativeChatGlobalSettings } from './native-chat/native-chat-appeara
 import type { WorktreeDeletionPreferences } from './worktree-deletion-preferences'
 import type { AgentPermissionGlobalSettings } from './tui-agent-permission-choice'
 import type { OrchestrationHeartbeatSettings } from './orchestration-heartbeat'
+import type { TerminalOutputFoldingGlobalSettings } from './terminal-output-folding-settings'
 
 /** Settings groups owned by their feature modules and composed into GlobalSettings. */
 export type GlobalSettingsBase = ClaudeAgentViewSettings &
@@ -17,4 +18,5 @@ export type GlobalSettingsBase = ClaudeAgentViewSettings &
   ExternalConversationSettings &
   BrowserLinkOpeningSettings &
   OrchestrationHeartbeatSettings &
-  BrowserExtensionGlobalSettings
+  BrowserExtensionGlobalSettings &
+  TerminalOutputFoldingGlobalSettings

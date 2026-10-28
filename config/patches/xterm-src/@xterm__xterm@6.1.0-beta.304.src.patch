@@ -1,8 +1,18 @@
 diff --git a/src/browser/CoreBrowserTerminal.ts b/src/browser/CoreBrowserTerminal.ts
-index 67893b7966eb095db4459b8837de9766921f36c5..3c2ac1afaeda22da4482099702d3ca673c57f4e1 100644
+index 67893b7966eb095db4459b8837de9766921f36c5..c1af3837a69597141892680a579ff276643613c3 100644
 --- a/src/browser/CoreBrowserTerminal.ts
 +++ b/src/browser/CoreBrowserTerminal.ts
-@@ -325,6 +325,9 @@ export class CoreBrowserTerminal extends CoreTerminal implements ITerminal {
+@@ -48,7 +48,8 @@ import { CoreTerminal } from '../common/CoreTerminal';
+ import * as Browser from '../common/Platform';
+ import { ColorRequestType, IColorEvent, ITerminalOptions, KeyboardResultType, SpecialColorIndex } from '../common/Types';
+ import { DEFAULT_ATTR_DATA } from '../common/buffer/BufferLine';
+-import { IBuffer } from '../common/buffer/Types';
++import { Buffer, IBufferFoldChange } from '../common/buffer/Buffer';
++import { IBuffer, IBufferFold } from '../common/buffer/Types';
+ import { C0, C1ESCAPED } from '../common/data/EscapeSequences';
+ import { toRgbString } from '../common/input/XParseColor';
+ import { DecorationService } from '../common/services/DecorationService';
+@@ -325,6 +326,9 @@ export class CoreBrowserTerminal extends CoreTerminal implements ITerminal {
    private _handleTextAreaBlur(): void {
      // Text can safely be removed on blur. Doing it earlier could interfere with
      // screen readers reading it out.
@@ -12,7 +22,7 @@ index 67893b7966eb095db4459b8837de9766921f36c5..3c2ac1afaeda22da4482099702d3ca67
      this.textarea!.value = '';
      this.refresh(this.buffer.y, this.buffer.y);
      if (this.coreService.decPrivateModes.sendFocus) {
-@@ -425,7 +428,18 @@ export class CoreBrowserTerminal extends CoreTerminal implements ITerminal {
+@@ -425,7 +429,18 @@ export class CoreBrowserTerminal extends CoreTerminal implements ITerminal {
        this._compositionHelper!.updateCompositionElements();
      }));
      this._register(addDisposableListener(this.textarea!, 'compositionupdate', (e: CompositionEvent) => this._compositionHelper!.compositionupdate(e)));
@@ -32,7 +42,7 @@ index 67893b7966eb095db4459b8837de9766921f36c5..3c2ac1afaeda22da4482099702d3ca67
      this._register(addDisposableListener(this.textarea!, 'input', (ev: InputEvent) => this._inputEvent(ev), true));
      this._register(this.onRender(() => this._compositionHelper!.updateCompositionElements()));
    }
-@@ -552,6 +566,11 @@ export class CoreBrowserTerminal extends CoreTerminal implements ITerminal {
+@@ -552,6 +567,11 @@ export class CoreBrowserTerminal extends CoreTerminal implements ITerminal {
      this._compositionView = this._document.createElement('div');
      this._compositionView.classList.add('composition-view');
      this._compositionHelper = this._instantiationService.createInstance(CompositionHelper, this.textarea, this._compositionView);
@@ -44,7 +54,39 @@ index 67893b7966eb095db4459b8837de9766921f36c5..3c2ac1afaeda22da4482099702d3ca67
      this._helperContainer.appendChild(this._compositionView);
  
      this._mouseCoordsService = this._instantiationService.createInstance(MouseCoordsService);
-@@ -1009,7 +1028,9 @@ export class CoreBrowserTerminal extends CoreTerminal implements ITerminal {
+@@ -778,6 +798,31 @@ export class CoreBrowserTerminal extends CoreTerminal implements ITerminal {
+     return this._decorationService.registerDecoration(decorationOptions);
+   }
+ 
++  public registerFold(marker: IMarker, endMarker: IMarker): IBufferFold | undefined {
++    const normal = this.buffers.normal;
++    if (!(normal instanceof Buffer)) {
++      return undefined;
++    }
++    return normal.registerFold(marker, endMarker, e => this._handleFoldChange(normal, e));
++  }
++
++  public withFoldsExpanded<T>(callback: () => T): T {
++    const normal = this.buffers.normal;
++    return normal instanceof Buffer ? normal.withFoldsExpanded(callback) : callback();
++  }
++
++  private _handleFoldChange(buffer: Buffer, e: IBufferFoldChange): void {
++    // The inactive normal buffer resyncs its viewport when it is activated again.
++    if (this.buffer !== buffer) {
++      return;
++    }
++    this._selectionService?.handleFoldChange?.(e.index, e.amount);
++    this._onScroll.fire({ position: buffer.ydisp });
++    // The cursor's absolute line moved, which caches keyed by buffer line rely on.
++    this._onCursorMove.fire();
++    this.refresh(0, this.rows - 1);
++  }
++
+   /**
+    * Gets whether the terminal has an active selection.
+    */
+@@ -1009,7 +1054,9 @@ export class CoreBrowserTerminal extends CoreTerminal implements ITerminal {
  
      this._onKey.fire({ key, domEvent: ev });
      this._showCursor();
@@ -55,7 +97,7 @@ index 67893b7966eb095db4459b8837de9766921f36c5..3c2ac1afaeda22da4482099702d3ca67
  
      this._keyPressHandled = true;
  
-@@ -1027,6 +1048,23 @@ export class CoreBrowserTerminal extends CoreTerminal implements ITerminal {
+@@ -1027,6 +1074,23 @@ export class CoreBrowserTerminal extends CoreTerminal implements ITerminal {
     * @param ev The input event to be handled.
     */
    protected _inputEvent(ev: InputEvent): boolean {
@@ -80,10 +122,29 @@ index 67893b7966eb095db4459b8837de9766921f36c5..3c2ac1afaeda22da4482099702d3ca67
      // support reading out character input which can doubling up input characters
      // Based on these event traces: https://github.com/xtermjs/xterm.js/issues/3679
 diff --git a/src/browser/Types.ts b/src/browser/Types.ts
-index 497afcf535f3eaca00889525a77e15eb633ccd96..96d499b34605f860608382114c3fbdc07dc6b07f 100644
+index 497afcf535f3eaca00889525a77e15eb633ccd96..f2ed02429999c312b7a3e256c9061d8b5260e8e0 100644
 --- a/src/browser/Types.ts
 +++ b/src/browser/Types.ts
-@@ -41,9 +41,10 @@ export interface ICompositionHelper {
+@@ -4,7 +4,7 @@
+  */
+ 
+ import { IColor, ITerminalOptions } from '../common/Types';
+-import { CharData, IBuffer } from '../common/buffer/Types';
++import { CharData, IBuffer, IBufferFold, IMarker } from '../common/buffer/Types';
+ import { ICoreTerminal } from '../common/CoreTerminal';
+ import { IDisposable, IRenderDimensions as IRenderDimensionsApi, Terminal as ITerminalApi } from '@xterm/xterm';
+ import { channels, css } from '../common/Color';
+@@ -30,6 +30,9 @@ export interface ITerminal extends InternalPassthroughApis, ICoreTerminal {
+   onA11yChar: IEvent<string>;
+   onA11yTab: IEvent<number>;
+   onWillOpen: IEvent<HTMLElement>;
++
++  registerFold?(marker: IMarker, endMarker: IMarker): IBufferFold | undefined;
++  withFoldsExpanded?<T>(callback: () => T): T;
+ }
+ 
+ export type CustomKeyEventHandler = (event: KeyboardEvent) => boolean;
+@@ -41,9 +44,10 @@ export interface ICompositionHelper {
    readonly isComposing: boolean;
    compositionstart(): void;
    compositionupdate(ev: CompositionEvent): void;
@@ -1308,6 +1369,40 @@ index c9ec396ab66cb966d49aa63bed09cdf9cd6c4246..cfc6385982b16b8c46b1eff1bbd6a177
 +    preedit.replaceChildren(...nodes);
    }
  }
+diff --git a/src/browser/public/Terminal.ts b/src/browser/public/Terminal.ts
+index 69ab09bf1e04bb4d97c6777e16b9caa5a54900b6..ea7e912a4860bddfb2e81360ebe3175f7d89e971 100644
+--- a/src/browser/public/Terminal.ts
++++ b/src/browser/public/Terminal.ts
+@@ -14,6 +14,7 @@ import { ParserApi } from '../../common/public/ParserApi';
+ import { UnicodeApi } from '../../common/public/UnicodeApi';
+ import { IBufferNamespace as IBufferNamespaceApi, IDecoration, IDecorationOptions, IDisposable, ILinkProvider, ILocalizableStrings, IMarker, IModes, IParser, IRenderDimensions, ITerminalAddon, Terminal as ITerminalApi, ITerminalInitOnlyOptions, IUnicodeHandling } from '@xterm/xterm';
+ import type { IEvent } from '../../common/Event';
++import type { IBufferFold } from '../../common/buffer/Types';
+ 
+ /**
+  * The set of options that only have an effect when set in the Terminal constructor.
+@@ -174,6 +175,21 @@ export class Terminal extends Disposable implements ITerminalApi {
+     this._verifyPositiveIntegers(decorationOptions.x ?? 0, decorationOptions.width ?? 0, decorationOptions.height ?? 0);
+     return this._core.registerDecoration(decorationOptions);
+   }
++  /**
++   * Orca: registers a fold that can hide the normal-buffer lines after `marker`'s line, up to but
++   * excluding `endMarker`'s line, behind the header line at `marker`. Only scrollback lines are
++   * hidden. Returns undefined unless both markers belong to the normal buffer, in that order.
++   */
++  public registerFold(marker: IMarker, endMarker: IMarker): IBufferFold | undefined {
++    return this._core.registerFold?.(marker, endMarker);
++  }
++  /**
++   * Orca: runs `callback` with every fold's hidden lines back in the buffer, then hides them again.
++   * Lets readers such as serializers see all content.
++   */
++  public withFoldsExpanded<T>(callback: () => T): T {
++    return this._core.withFoldsExpanded ? this._core.withFoldsExpanded(callback) : callback();
++  }
+   public hasSelection(): boolean {
+     return this._core.hasSelection();
+   }
 diff --git a/src/browser/renderer/dom/WidthCache.ts b/src/browser/renderer/dom/WidthCache.ts
 index d45938515e7a9903de0da0d61716fd42e4deea0c..17d6577e388eb2e4397338093e35373864b822a4 100644
 --- a/src/browser/renderer/dom/WidthCache.ts
@@ -1321,6 +1416,38 @@ index d45938515e7a9903de0da0d61716fd42e4deea0c..17d6577e388eb2e4397338093e353738
    private _canvas: OffscreenCanvas | HTMLCanvasElement;
    private _ctx: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
  
+diff --git a/src/browser/selection/SelectionModel.ts b/src/browser/selection/SelectionModel.ts
+index 8f87f17e2194c24454a14b151c8826420b6ec712..f6ae1a7b75287f1b0c572517f3ac5426fc1d678f 100644
+--- a/src/browser/selection/SelectionModel.ts
++++ b/src/browser/selection/SelectionModel.ts
+@@ -142,4 +142,27 @@ export class SelectionModel {
+     }
+     return false;
+   }
++
++  /**
++   * Handle lines being hidden from or put back at `index`, see SelectionService.handleFoldChange.
++   * @returns Whether a refresh is necessary.
++   */
++  public handleFoldChange(index: number, amount: number): boolean {
++    if (!this.selectionStart || this.isSelectAllActive) {
++      return false;
++    }
++    const ends = this.selectionEnd ? [this.selectionStart, this.selectionEnd] : [this.selectionStart];
++    if (amount < 0 && ends.some(end => end[1] >= index && end[1] < index - amount)) {
++      this.clearSelection();
++      return true;
++    }
++    let moved = false;
++    for (const end of ends) {
++      if (end[1] >= index) {
++        end[1] += amount;
++        moved = true;
++      }
++    }
++    return moved;
++  }
+ }
 diff --git a/src/browser/services/MouseService.ts b/src/browser/services/MouseService.ts
 index 353e0581da7a95c9473d6169cd9ec548bc3bfe30..a51645fb22b922f8fde5c10730d029e14b8912cd 100644
 --- a/src/browser/services/MouseService.ts
@@ -1338,6 +1465,160 @@ index 353e0581da7a95c9473d6169cd9ec548bc3bfe30..a51645fb22b922f8fde5c10730d029e1
        return false;
      }
  
+diff --git a/src/browser/services/SelectionService.ts b/src/browser/services/SelectionService.ts
+index 39d8dd76b638f655f6eddf48391481c7dc835894..5f2a1217f920596c4b6d9544af486f664870eba7 100644
+--- a/src/browser/services/SelectionService.ts
++++ b/src/browser/services/SelectionService.ts
+@@ -390,6 +390,16 @@ export class SelectionService extends Disposable implements ISelectionService {
+     }
+   }
+ 
++  /**
++   * Keeps the selection on the same text when a fold hides lines from `index` (negative `amount`)
++   * or puts lines back there (positive `amount`).
++   */
++  public handleFoldChange(index: number, amount: number): void {
++    if (this._model.handleFoldChange(index, amount)) {
++      this.refresh();
++    }
++  }
++
+   /**
+    * Gets the 0-based [x, y] buffer coordinates of the current mouse event.
+    * @param event The mouse event.
+diff --git a/src/browser/services/Services.ts b/src/browser/services/Services.ts
+index 2b8e06b7d7c81fa4292dff4770476473cd29c277..140fb3ddfa5522f0ab6f099ca32e92fdaeb5bf1c 100644
+--- a/src/browser/services/Services.ts
++++ b/src/browser/services/Services.ts
+@@ -133,6 +133,7 @@ export interface ISelectionService {
+   refresh(isLinuxMouseSelection?: boolean): void;
+   handleMouseDown(event: MouseEvent): void;
+   isCellInSelection(x: number, y: number): boolean;
++  handleFoldChange?(index: number, amount: number): void;
+ }
+ 
+ export const ICharacterJoinerService = createDecorator<ICharacterJoinerService>('CharacterJoinerService');
+diff --git a/src/common/CircularList.ts b/src/common/CircularList.ts
+index b773391f9645e157801aa6d6b1c10a08972fc5f3..d865697a2d46d09daca4798bd297505c3f9a0126 100644
+--- a/src/common/CircularList.ts
++++ b/src/common/CircularList.ts
+@@ -46,6 +46,9 @@ export class CircularList<T> extends Disposable implements ICircularList<T> {
+   protected _array: (T | undefined)[];
+   private _startIndex: number;
+   private _length: number;
++  // Items held outside the list (folded buffer lines) still count against maxLength.
++  private _reserved = 0;
++  private _capacity: number;
+ 
+   public readonly onDeleteEmitter = this._register(new Emitter<IDeleteEvent>());
+   public readonly onDelete = this.onDeleteEmitter.event;
+@@ -61,6 +64,7 @@ export class CircularList<T> extends Disposable implements ICircularList<T> {
+     this._array = new Array<T>(this._maxLength);
+     this._startIndex = 0;
+     this._length = 0;
++    this._capacity = this._maxLength;
+   }
+ 
+   public get maxLength(): number {
+@@ -81,9 +85,23 @@ export class CircularList<T> extends Disposable implements ICircularList<T> {
+     }
+     this._array = newArray;
+     this._maxLength = newMaxLength;
++    this._capacity = newMaxLength - this._reserved;
+     this._startIndex = 0;
+   }
+ 
++  /**
++   * The number of slots held back for items kept outside the list, so that putting them back can
++   * never trim the start of the list.
++   */
++  public get reserved(): number {
++    return this._reserved;
++  }
++
++  public set reserved(value: number) {
++    this._reserved = value;
++    this._capacity = this._maxLength - value;
++  }
++
+   public get length(): number {
+     return this._length;
+   }
+@@ -128,7 +146,7 @@ export class CircularList<T> extends Disposable implements ICircularList<T> {
+    */
+   public push(value: T): void {
+     this._array[this._getCyclicIndex(this._length)] = value;
+-    if (this._length === this._maxLength) {
++    if (this._length === this._capacity) {
+       this._startIndex = ++this._startIndex % this._maxLength;
+       this.onTrimEmitter.fire(1);
+     } else {
+@@ -142,9 +160,17 @@ export class CircularList<T> extends Disposable implements ICircularList<T> {
+    * @throws When the buffer is not full.
+    */
+   public recycle(): T {
+-    if (this._length !== this._maxLength) {
++    if (this._length !== this._capacity) {
+       throw new Error('Can only recycle when the buffer is full');
+     }
++    if (this._capacity !== this._maxLength) {
++      // With reserved slots the last index is not the slot just freed, so move the item there.
++      const recycled = this._array[this._getCyclicIndex(0)]!;
++      this._startIndex = ++this._startIndex % this._maxLength;
++      this._array[this._getCyclicIndex(this._length - 1)] = recycled;
++      this.onTrimEmitter.fire(1);
++      return recycled;
++    }
+     this._startIndex = ++this._startIndex % this._maxLength;
+     this.onTrimEmitter.fire(1);
+     return this._array[this._getCyclicIndex(this._length - 1)]!;
+@@ -154,7 +180,7 @@ export class CircularList<T> extends Disposable implements ICircularList<T> {
+    * Ringbuffer is at max length.
+    */
+   public get isFull(): boolean {
+-    return this._length === this._maxLength;
++    return this._length === this._capacity;
+   }
+ 
+   /**
+@@ -175,6 +201,14 @@ export class CircularList<T> extends Disposable implements ICircularList<T> {
+    * @param items The items to insert.
+    */
+   public splice(start: number, deleteCount: number, ...items: T[]): void {
++    this.spliceArray(start, deleteCount, items);
++  }
++
++  /**
++   * Like {@link splice}, but takes the items to insert as an array so that a large batch does not
++   * overflow the call stack through spread arguments.
++   */
++  public spliceArray(start: number, deleteCount: number, items: T[]): void {
+     // Delete items
+     if (deleteCount) {
+       for (let i = start; i < this._length - deleteCount; i++) {
+@@ -196,10 +230,10 @@ export class CircularList<T> extends Disposable implements ICircularList<T> {
+     }
+ 
+     // Adjust length as needed
+-    if (this._length + items.length > this._maxLength) {
+-      const countToTrim = (this._length + items.length) - this._maxLength;
++    if (this._length + items.length > this._capacity) {
++      const countToTrim = (this._length + items.length) - this._capacity;
+       this._startIndex += countToTrim;
+-      this._length = this._maxLength;
++      this._length = this._capacity;
+       this.onTrimEmitter.fire(countToTrim);
+     } else {
+       this._length += items.length;
+@@ -237,7 +271,7 @@ export class CircularList<T> extends Disposable implements ICircularList<T> {
+       const expandListBy = (start + count + offset) - this._length;
+       if (expandListBy > 0) {
+         this._length += expandListBy;
+-        while (this._length > this._maxLength) {
++        while (this._length > this._capacity) {
+           this._length--;
+           this._startIndex++;
+           this.onTrimEmitter.fire(1);
 diff --git a/src/common/InputHandler.ts b/src/common/InputHandler.ts
 index 995fe7670a10f11fb9b0b42332484b038ea6c989..3df13f60209ccd097b861d94efd481988d38400f 100644
 --- a/src/common/InputHandler.ts
@@ -1495,10 +1776,56 @@ index b37c1550887d467d8af0c46da96defa296ede197..9569755e6d6b112c4403f424b5d2f394
    }
  }
 diff --git a/src/common/buffer/Buffer.ts b/src/common/buffer/Buffer.ts
-index e3a88bfeb4bbf79214d799adec30cba8e4dc1b49..ca7ee6b45245a2ea5a2b027e192b98cda7ea5e36 100644
+index e3a88bfeb4bbf79214d799adec30cba8e4dc1b49..7da12ff99a0a53ae7334681cda900f51910dcc68 100644
 --- a/src/common/buffer/Buffer.ts
 +++ b/src/common/buffer/Buffer.ts
-@@ -165,9 +165,9 @@ export class Buffer extends Disposable implements IBuffer {
+@@ -5,9 +5,10 @@
+ 
+ import { CircularList, IInsertEvent } from '../CircularList';
+ import { Disposable, toDisposable } from '../Lifecycle';
++import { Emitter } from '../Event';
+ import { IdleTaskQueue } from '../TaskQueue';
+ import { ICharset } from '../Types';
+-import { IAttributeData, IBuffer, IBufferLine, ICellData } from './Types';
++import { IAttributeData, IBuffer, IBufferFold, IBufferLine, ICellData, IMarker } from './Types';
+ import { ExtendedAttrs } from './AttributeData';
+ import { BufferLine, DEFAULT_ATTR_DATA } from './BufferLine';
+ import { getWrappedLineTrimmedLength, reflowLargerApplyNewLayout, reflowLargerCreateNewLayout, reflowLargerGetLinesToRemove, reflowSmallerGetNewLineLengths } from './BufferReflow';
+@@ -51,6 +52,7 @@ export class Buffer extends Disposable implements IBuffer {
+   private _isClearing: boolean = false;
+   private _memoryCleanupQueue: InstanceType<typeof IdleTaskQueue>;
+   private _memoryCleanupPosition = 0;
++  private _folds: BufferFold[] | undefined;
+ 
+   constructor(
+     private _hasScrollback: boolean,
+@@ -142,6 +144,7 @@ export class Buffer extends Disposable implements IBuffer {
+    * Clears the buffer to its initial state, discarding all previous data.
+    */
+   public clear(): void {
++    this._dropFolds();
+     this.ydisp = 0;
+     this.ybase = 0;
+     this.y = 0;
+@@ -158,6 +161,17 @@ export class Buffer extends Disposable implements IBuffer {
+    * @param newRows The new number of rows.
+    */
+   public resize(newCols: number, newRows: number): void {
++    // Reflow and row changes only see lines in the buffer, so put hidden lines back first.
++    const collapsedFolds = this._folds?.filter(fold => fold.revealLines() > 0);
++    this._resizeLines(newCols, newRows);
++    collapsedFolds?.forEach(fold => {
++      if (!fold.isDisposed) {
++        fold.hideLines();
++      }
++    });
++  }
++
++  private _resizeLines(newCols: number, newRows: number): void {
+     // store reference to null cell with default attrs
+     const nullCell = this.getNullCell(DEFAULT_ATTR_DATA);
+ 
+@@ -165,9 +179,9 @@ export class Buffer extends Disposable implements IBuffer {
      let dirtyMemoryLines = 0;
  
      // Increase max length if needed before adjustments to allow space to fill
@@ -1510,3 +1837,340 @@ index e3a88bfeb4bbf79214d799adec30cba8e4dc1b49..ca7ee6b45245a2ea5a2b027e192b98cd
        this.lines.maxLength = newMaxLength;
      }
  
+@@ -626,6 +640,7 @@ export class Buffer extends Disposable implements IBuffer {
+    * Clears markers on all lines
+    */
+   public clearAllMarkers(): void {
++    this._dropFolds();
+     this._isClearing = true;
+     for (let i = 0; i < this.markers.length; i++) {
+       this.markers[i].dispose();
+@@ -635,8 +650,16 @@ export class Buffer extends Disposable implements IBuffer {
+   }
+ 
+   public addMarker(y: number): Marker {
+-    const marker = new Marker(y);
++    const marker = this._createMarker(y);
+     this.markers.push(marker);
++    marker.register(marker.onDispose(() => this._removeMarker(marker)));
++    return marker;
++  }
++
++  // Stays out of `markers`, so erasing its line or clearMarkers() cannot dispose it.
++  // `keepOnDelete` moves the marker to the line that takes its place instead of disposing it.
++  private _createMarker(y: number, keepOnDelete?: boolean): Marker {
++    const marker = new Marker(y);
+     marker.register(this.lines.onTrim(amount => {
+       marker.line -= amount;
+       // The marker should be disposed when the line is trimmed from the buffer
+@@ -652,6 +675,10 @@ export class Buffer extends Disposable implements IBuffer {
+     marker.register(this.lines.onDelete(event => {
+       // Delete the marker if it's within the range
+       if (marker.line >= event.index && marker.line < event.index + event.amount) {
++        if (keepOnDelete) {
++          marker.line = event.index;
++          return;
++        }
+         marker.dispose();
+       }
+ 
+@@ -660,7 +687,6 @@ export class Buffer extends Disposable implements IBuffer {
+         marker.line -= event.amount;
+       }
+     }));
+-    marker.register(marker.onDispose(() => this._removeMarker(marker)));
+     return marker;
+   }
+ 
+@@ -669,4 +695,267 @@ export class Buffer extends Disposable implements IBuffer {
+       this.markers.splice(this.markers.indexOf(marker), 1);
+     }
+   }
++
++  public get folds(): readonly BufferFold[] {
++    return this._folds ?? [];
++  }
++
++  /**
++   * Registers a fold over the lines after `marker`'s line, up to but excluding `endMarker`'s line.
++   * The header line stays visible. Only scrollback lines are ever hidden: the program can still
++   * rewrite the screen, and hiding screen lines would break its cursor positioning.
++   */
++  public registerFold(marker: IMarker, endMarker: IMarker, onChange: (event: IBufferFoldChange) => void): BufferFold | undefined {
++    if (!this._hasScrollback || marker.isDisposed || endMarker.isDisposed || endMarker.line <= marker.line
++      || !this.markers.some(m => m === marker) || !this.markers.some(m => m === endMarker)) {
++      return undefined;
++    }
++    // Logical line starts survive reflow, where continuation rows merge away.
++    const headerRange = this.getWrappedRangeForLine(marker.line);
++    const endLine = this.getWrappedRangeForLine(endMarker.line).first;
++    if (endLine <= headerRange.last + 1) {
++      return undefined;
++    }
++    // Header and tail are ordinary markers, so erasing their screen line (a clear screen) reaches
++    // the fold. The end may sit on a program's live region and must survive its repaints.
++    const header = this.addMarker(headerRange.first);
++    const end = this._createMarker(endLine, true);
++    const tail = this.addMarker(this.getWrappedRangeForLine(endLine - 1).first);
++    const fold = new BufferFold(this, header, end, tail, onChange);
++    (this._folds ??= []).push(fold);
++    return fold;
++  }
++
++  public forgetFold(fold: BufferFold): void {
++    const index = this._folds?.indexOf(fold) ?? -1;
++    if (index !== -1) {
++      this._folds!.splice(index, 1);
++    }
++  }
++
++  /**
++   * Runs `callback` with every hidden line back in the buffer, so readers such as serializers see
++   * all content, then hides the same lines again. No events fire and the viewport ends unchanged.
++   */
++  public withFoldsExpanded<T>(callback: () => T): T {
++    const folds = this._folds?.filter(fold => fold.isCollapsed);
++    if (!folds?.length) {
++      return callback();
++    }
++    const counts = folds.map(fold => fold.revealLines());
++    try {
++      return callback();
++    } finally {
++      folds.forEach((fold, i) => {
++        if (!fold.isDisposed) {
++          fold.hideLines(counts[i]);
++        }
++      });
++    }
++  }
++
++  private _dropFolds(): void {
++    const folds = this._folds;
++    this._folds = undefined;
++    folds?.forEach(fold => fold.drop());
++  }
++}
++
++export interface IBufferFoldChange {
++  /** The first buffer line that moved. */
++  index: number;
++  /** Lines put back at `index` when positive, lines hidden from it when negative. */
++  amount: number;
++}
++
++/**
++ * Hides a range of scrollback lines behind the header line before it. Hidden lines keep counting
++ * against the scrollback limit, so expanding never trims history.
++ */
++export class BufferFold extends Disposable implements IBufferFold {
++  private _hidden: IBufferLine[] = [];
++  private _isDisposed = false;
++  private _isHiding = false;
++
++  private readonly _onDispose = this._register(new Emitter<void>());
++  public readonly onDispose = this._onDispose.event;
++
++  constructor(
++    private readonly _buffer: Buffer,
++    public readonly marker: Marker,
++    private readonly _end: Marker,
++    tail: Marker,
++    private readonly _onChange: (event: IBufferFoldChange) => void
++  ) {
++    super();
++    this._register(marker);
++    this._register(_end);
++    this._register(tail);
++    // A header trimmed off the top or erased takes its hidden lines along, as trimming would have.
++    this._register(marker.onDispose(() => this.drop()));
++    // The block's last line was erased on screen, so later lines are not its output: stop growing.
++    this._register(tail.onDispose(() => {
++      if (!this._isHiding && !this._isDisposed) {
++        this._end.line = this._start();
++      }
++    }));
++  }
++
++  public get isDisposed(): boolean { return this._isDisposed; }
++  public get isCollapsed(): boolean { return this._hidden.length > 0; }
++  public get hiddenLineCount(): number { return this._hidden.length; }
++
++  /** The lines the fold covers, hidden or not. */
++  public get lineCount(): number {
++    return this._isDisposed ? 0 : Math.max(0, this._end.line - this._start()) + this._hidden.length;
++  }
++
++  /** The hidden lines as text, with wrapped rows joined into their logical lines. */
++  public translateHiddenLines(): string[] {
++    const lines: string[] = [];
++    this._hidden.forEach((line, i) => {
++      const text = line.translateToString(!this._hidden[i + 1]?.isWrapped);
++      if (line.isWrapped && lines.length > 0) {
++        lines[lines.length - 1] += text;
++      } else {
++        lines.push(text);
++      }
++    });
++    return lines;
++  }
++
++  /**
++   * Hides the part of the range that is in the scrollback. Call again as more of the range
++   * scrolls into the scrollback. Returns the number of lines newly hidden.
++   */
++  public collapse(): number {
++    if (this._isDisposed) {
++      return 0;
++    }
++    const index = this._start();
++    const count = this.hideLines();
++    if (count > 0) {
++      this._onChange({ index, amount: -count });
++    }
++    return count;
++  }
++
++  public expand(): void {
++    if (this._isDisposed) {
++      return;
++    }
++    const index = this._start();
++    const count = this.revealLines();
++    if (count > 0) {
++      this._onChange({ index, amount: count });
++    }
++  }
++
++  /** Puts the hidden lines back and removes the fold. */
++  public override dispose(): void {
++    if (this._isDisposed) {
++      return;
++    }
++    this.expand();
++    this._release();
++  }
++
++  /** Removes the fold and discards its hidden lines. */
++  public drop(): void {
++    if (this._isDisposed) {
++      return;
++    }
++    this._buffer.lines.reserved -= this._hidden.length;
++    this._hidden = [];
++    this._release();
++  }
++
++  public hideLines(exactCount?: number): number {
++    let range = this._hideableRange(exactCount);
++    if (!range) {
++      return 0;
++    }
++    // Lines of a nested fold lose their markers below, so move its hidden lines into this fold.
++    let expandedNested = false;
++    for (const fold of [...this._buffer.folds]) {
++      if (fold !== this && fold.isCollapsed && fold.marker.line >= range.from && fold.marker.line < range.to) {
++        fold.expand();
++        expandedNested = true;
++      }
++    }
++    if (expandedNested) {
++      range = this._hideableRange(exactCount)!;
++    }
++    const { from, to } = range;
++    const buffer = this._buffer;
++    const count = to - from;
++    for (let i = from; i < to; i++) {
++      this._hidden.push(buffer.lines.get(i)!);
++    }
++    this._isHiding = true;
++    try {
++      buffer.lines.splice(from, count);
++    } finally {
++      this._isHiding = false;
++    }
++    buffer.lines.reserved += count;
++    buffer.ybase -= count;
++    if (buffer.ydisp >= to) {
++      buffer.ydisp -= count;
++    } else if (buffer.ydisp >= from) {
++      buffer.ydisp = from - 1;
++    }
++    if (buffer.savedY >= to) {
++      buffer.savedY -= count;
++    } else if (buffer.savedY >= from) {
++      buffer.savedY = from;
++    }
++    return count;
++  }
++
++  public revealLines(): number {
++    const lines = this._hidden;
++    if (lines.length === 0) {
++      return 0;
++    }
++    this._hidden = [];
++    const buffer = this._buffer;
++    const at = this._start();
++    buffer.lines.reserved -= lines.length;
++    buffer.lines.spliceArray(at, 0, lines);
++    buffer.ybase += lines.length;
++    if (buffer.ydisp >= at) {
++      buffer.ydisp += lines.length;
++    }
++    if (buffer.savedY >= at) {
++      buffer.savedY += lines.length;
++    }
++    return lines.length;
++  }
++
++  private _start(): number {
++    return this._buffer.getWrappedRangeForLine(this.marker.line).last + 1;
++  }
++
++  private _hideableRange(exactCount?: number): { from: number, to: number } | undefined {
++    const from = this._start();
++    let to: number;
++    if (exactCount !== undefined) {
++      to = from + exactCount;
++    } else {
++      to = Math.min(this._end.line, this._buffer.ybase);
++      // Never split a wrapped line between hidden and visible rows.
++      while (to > from && this._buffer.lines.get(to)?.isWrapped) {
++        to--;
++      }
++    }
++    return to > from ? { from, to } : undefined;
++  }
++
++  private _release(): void {
++    this._isDisposed = true;
++    this._buffer.forgetFold(this);
++    this._onDispose.fire();
++    super.dispose();
++  }
+ }
+diff --git a/src/common/buffer/Types.ts b/src/common/buffer/Types.ts
+index 025fed0b78843597210a04d2cdf9933a35e7565f..1e4a401ee36a02583b05b066b9a5b20122243fbe 100644
+--- a/src/common/buffer/Types.ts
++++ b/src/common/buffer/Types.ts
+@@ -157,6 +157,19 @@ export interface IMarker extends IDisposable {
+   onDispose: IEvent<void>;
+ }
+ 
++/** A range of normal-buffer lines that can be hidden behind the header line at `marker`. */
++export interface IBufferFold extends IDisposable {
++  readonly marker: IMarker;
++  readonly isDisposed: boolean;
++  readonly isCollapsed: boolean;
++  readonly hiddenLineCount: number;
++  readonly lineCount: number;
++  readonly onDispose: IEvent<void>;
++  collapse(): number;
++  expand(): void;
++  translateHiddenLines(): string[];
++}
++
+ export interface IBuffer {
+   readonly lines: ICircularList<IBufferLine>;
+   ydisp: number;

@@ -31,6 +31,8 @@ import { normalizeTerminalLineHeight } from '../../../../shared/terminal-line-he
 import { maybePushMode2031Flip } from './terminal-mode-2031-replies'
 import { resolveTerminalMinimumContrastRatio } from '../../../../shared/terminal-contrast-correction'
 import { resolveTerminalInlineImagesEnabled } from '../../../../shared/terminal-inline-images-settings'
+import { resolveTerminalOutputFoldingSettings } from '../../../../shared/terminal-output-folding-settings'
+import { getTerminalOutputFolding } from '@/lib/pane-manager/terminal-output-folding'
 
 export function hexToRgba(hex: string, alpha: number): string {
   let clean = hex.replace('#', '')
@@ -157,6 +159,7 @@ export function applyTerminalAppearance(
     settings.terminalLigatures,
     settings.terminalFontFamily
   )
+  const outputFolding = resolveTerminalOutputFoldingSettings(settings)
 
   for (const pane of manager.getPanes()) {
     // Why value-gated: writing options.theme rebuilds the palette, discarding TUI OSC 4/10/11/12 mutations; skip on no-op change.
@@ -206,6 +209,7 @@ export function applyTerminalAppearance(
       pane.id,
       resolveTerminalInlineImagesEnabled(settings.terminalInlineImages)
     )
+    getTerminalOutputFolding(pane.terminal)?.update(outputFolding)
     const transport = paneTransports.get(pane.id)
     // Why: PTY is already at phone dimensions under a mobile-fit override — don't resize it back to desktop.
     const appearancePtyId = transport?.getPtyId()
