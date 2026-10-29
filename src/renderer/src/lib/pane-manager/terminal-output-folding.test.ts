@@ -2,20 +2,18 @@
 
 import { Terminal } from '@xterm/xterm'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createTerminalCommandLifecycle } from '@/components/terminal-pane/terminal-command-lifecycle'
 import { FoldAwareSearchAddon } from './terminal-fold-aware-addons'
 import { attachTerminalOutputFolding, type TerminalOutputFolding } from './terminal-output-folding'
 
-const OSC = (payload: string): string => `\x1b]133;${payload}\x07`
 const cleanups: (() => void)[] = []
 const originalGetContext =
   Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'getContext') ?? {}
 
-function setup(
-  autoCollapse: boolean,
-  { open = false }: { open?: boolean } = {}
-): { terminal: Terminal; folding: TerminalOutputFolding } {
-  const terminal = new Terminal({ cols: 40, rows: 6, scrollback: 200 })
+function setup({ autoCollapse = true, devin = true, open = false } = {}): {
+  terminal: Terminal
+  folding: TerminalOutputFolding
+} {
+  const terminal = new Terminal({ cols: 40, rows: 20, scrollback: 200 })
   if (open) {
     // xterm's DOM renderer only measures glyph widths through the canvas context.
     Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
@@ -30,10 +28,8 @@ function setup(
   if (!folding) {
     throw new Error('the @xterm/xterm patch no longer provides registerFold')
   }
-  const lifecycle = createTerminalCommandLifecycle({ onCommandFinished: () => {} })
-  lifecycle.attachXtermConsumer(terminal)
+  folding.setDevinCheck(() => devin)
   cleanups.push(() => {
-    lifecycle.dispose()
     folding.dispose()
     terminal.dispose()
   })
@@ -44,20 +40,23 @@ function write(terminal: Terminal, data: string): Promise<void> {
   return new Promise((resolve) => terminal.write(data, resolve))
 }
 
-function lines(terminal: Terminal): string[] {
+function screen(terminal: Terminal): string[] {
   const buffer = terminal.buffer.normal
-  return Array.from({ length: buffer.length }, (_, i) =>
-    (buffer.getLine(i)?.translateToString(true) ?? '').trimEnd()
+  return Array.from({ length: terminal.rows }, (_, i) =>
+    (buffer.getLine(buffer.baseY + i)?.translateToString(true) ?? '').trimEnd()
   )
 }
 
-// Devin marks C at the end of the user's message and D where the turn's output ends.
-function devinTurn(message: string, output: string[]): string {
-  return `${OSC('A;k=i')}❭ ${message}${OSC('B')}${OSC('C')}\r\n${output.map((line) => `${line}\r\n`).join('')}${OSC('D;0')}`
+const numbered = (count: number): string[] => Array.from({ length: count }, (_, i) => ` │ ${i}`)
+
+// Devin's layout: committed cards above a live region of spinner and input box, cursor in the box.
+function devinScreen(cards: string[][], { running = '' } = {}): string {
+  const body = cards.flatMap((card) => [...card, ''])
+  const live = [running, '──────────── (bypass permissions on) ─', '❭ ']
+  return ['❭ list the files', '', ...body, ...live].join('\r\n')
 }
 
-const numbered = (name: string, count: number): string[] =>
-  Array.from({ length: count }, (_, i) => `${name} ${i}`)
+const ranCommand = [' ⏺ Ran command', ' │ $ seq 1 6', ...numbered(6), ' └ Exited with code 0']
 
 afterEach(() => {
   for (const cleanup of cleanups.splice(0)) {
@@ -67,89 +66,77 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-describe('terminal output folding', () => {
-  it('folds a finished agent turn behind the user message as it leaves the screen', async () => {
-    const { terminal } = setup(true)
-    await write(terminal, devinTurn('list files', numbered('out', 12)))
-    await write(terminal, '── input box ──\r\n❭ \r\n')
+describe('Devin tool card folding', () => {
+  it('folds a finished card on the live screen and leaves the input box where it was', async () => {
+    const { terminal } = setup()
+    const unfolded = setup({ devin: false })
+    await write(terminal, devinScreen([ranCommand]))
+    await write(unfolded.terminal, devinScreen([ranCommand]))
+    const cursorY = terminal.buffer.normal.cursorY
 
-    // out 9 onward is still on the live screen.
-    expect(lines(terminal)).toEqual([
-      '❭ list files',
-      'out 9',
-      'out 10',
-      'out 11',
-      '── input box ──',
-      '❭',
-      ''
+    expect(cursorY).toBe(unfolded.terminal.buffer.normal.cursorY)
+    expect(screen(terminal).slice(cursorY - 6, cursorY + 1)).toEqual([
+      ' ⏺ Ran command',
+      ' │ $ seq 1 6',
+      ' └ Exited with code 0',
+      '',
+      '',
+      '──────────── (bypass permissions on) ─',
+      '❭'
     ])
-    await write(terminal, `${devinTurn('next', ['done'])}\r\n`)
-    expect(lines(terminal).slice(0, 2)).toEqual(['❭ list files', '── input box ──'])
+    expect(screen(terminal)).not.toContain(' │ 0')
   })
 
-  it('folds a shell command behind its command line', async () => {
-    const { terminal } = setup(true)
+  it('keeps a running card and other agents untouched', async () => {
+    const running = setup()
     await write(
-      terminal,
-      `${OSC('A')}$ ${OSC('B')}ls\r\n${OSC('C')}${numbered('file', 10).join('\r\n')}\r\n${OSC('D;0')}${OSC('A')}$ `
+      running.terminal,
+      devinScreen([], { running: ' ⏺ Running command' }).replace(
+        ' ⏺ Running command',
+        [' ⏺ Running command', ' │ $ seq 1 6', ...numbered(6)].join('\r\n')
+      )
     )
-    await write(terminal, '\r\n\r\n\r\n\r\n\r\n')
-    expect(lines(terminal).slice(0, 2)).toEqual(['$ ls', '$'])
+    expect(screen(running.terminal)).toContain(' │ 0')
+
+    const shell = setup({ devin: false })
+    await write(shell.terminal, devinScreen([ranCommand]))
+    expect(screen(shell.terminal)).toContain(' │ 0')
   })
 
-  it('leaves output expanded until automatic folding is turned on', async () => {
-    const { terminal, folding } = setup(false)
-    await write(terminal, devinTurn('list files', numbered('out', 12)))
-    await write(terminal, '── input box ──\r\n')
-    expect(lines(terminal)).toHaveLength(15)
+  it('only folds when automatic folding is on, and folds existing cards once it is', async () => {
+    const { terminal, folding } = setup({ autoCollapse: false })
+    await write(terminal, devinScreen([ranCommand]))
+    expect(screen(terminal)).toContain(' │ 0')
 
     folding.update({ enabled: true, autoCollapse: true })
-    await write(terminal, '\r\n')
-    expect(lines(terminal)[1]).toBe('out 9')
+    expect(screen(terminal)).not.toContain(' │ 0')
   })
 
-  it('waits while the reader is scrolled into the block', async () => {
-    const { terminal } = setup(true)
-    await write(terminal, `${numbered('before', 10).join('\r\n')}\r\n`)
-    await write(terminal, `${OSC('A;k=i')}❭ go${OSC('B')}${OSC('C')}\r\n`)
-    await write(terminal, `${numbered('out', 12).join('\r\n')}\r\n`)
-    terminal.scrollToLine(12)
-    await write(terminal, `${OSC('D;0')}── input box ──\r\n`)
-    expect(lines(terminal)).toContain('out 2')
-
-    terminal.scrollToBottom()
-    expect(lines(terminal)).not.toContain('out 2')
-    expect(lines(terminal)).toContain('❭ go')
-  })
-
-  it('expands folds that hold a match when find navigates', async () => {
-    // Find selects its match, which needs an opened terminal.
-    const { terminal } = setup(true, { open: true })
+  it('expands a card that holds a find match and keeps it open', async () => {
+    const { terminal } = setup({ open: true })
     const search = new FoldAwareSearchAddon()
     terminal.loadAddon(search)
-    await write(
-      terminal,
-      devinTurn('brew info', [...numbered('out', 6), 'needle', ...numbered('more', 6)])
-    )
-    await write(terminal, '── input box ──\r\n')
-    expect(lines(terminal)).not.toContain('needle')
+    const needle = [
+      ' ⏺ Ran command',
+      ' │ $ grep',
+      ' │ a',
+      ' │ needle',
+      ' │ b',
+      ' └ Exited with code 0'
+    ]
+    await write(terminal, devinScreen([needle]))
+    expect(screen(terminal)).not.toContain(' │ needle')
 
     expect(search.findNext('needle', { incremental: true })).toBe(true)
-    expect(lines(terminal)).toContain('needle')
-    // Expanded by find, the block stays open as later output arrives.
-    await write(terminal, '\r\n'.repeat(8))
-    expect(lines(terminal)).toContain('needle')
+    expect(screen(terminal)).toContain(' │ needle')
+    await write(terminal, `\r\n${[...ranCommand, '', '── box ──────────', '❭ '].join('\r\n')}`)
+    expect(screen(terminal)).toContain(' │ needle')
   })
 
   it('puts every hidden line back when folding is turned off', async () => {
-    const { terminal, folding } = setup(true)
-    await write(terminal, devinTurn('list files', numbered('out', 12)))
-    await write(terminal, '── input box ──\r\n')
-    expect(lines(terminal)).not.toContain('out 0')
-
+    const { terminal, folding } = setup()
+    await write(terminal, devinScreen([ranCommand]))
     folding.update({ enabled: false, autoCollapse: true })
-    expect(lines(terminal).slice(0, 3)).toEqual(['❭ list files', 'out 0', 'out 1'])
-    await write(terminal, `${devinTurn('again', numbered('x', 12))}${'\r\n'.repeat(6)}`)
-    expect(lines(terminal)).toContain('x 0')
+    expect(screen(terminal)).toEqual(expect.arrayContaining([' │ 0', ' │ 5']))
   })
 })

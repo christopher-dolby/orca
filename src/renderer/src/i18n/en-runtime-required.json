@@ -930,6 +930,11 @@
         }
       }
     },
+    "settings": {
+      "TerminalInteraction": {
+        "outputFoldingDescription": "Show a toggle on Devin’s finished tool cards to fold the output they printed."
+      }
+    },
     "tab": {
       "bar": {
         "bulkClose": {

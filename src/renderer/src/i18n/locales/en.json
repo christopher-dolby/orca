@@ -18970,9 +18970,9 @@
         "copyTrimsGutterDescription": "Drop the left gutter agent output is painted behind, so copied text is not indented. Only the indent every selected line shares is removed.",
         "copyOnSelectDescription": "Automatically copy text you select in a terminal or chat to the clipboard.",
         "outputFolding": "Output Folding",
-        "outputFoldingDescription": "Show a toggle on finished commands and agent turns in the scrollback to fold their output.",
+        "outputFoldingDescription": "Show a toggle on Devin’s finished tool cards to fold the output they printed.",
         "outputAutoFold": "Fold Output Automatically",
-        "outputAutoFoldDescription": "Fold finished output as it scrolls off the screen. Click the toggle to expand it again."
+        "outputAutoFoldDescription": "Fold finished tool cards as soon as Devin prints them. Click the toggle to expand one again."
       },
       "terminal": {
         "clipboard": {

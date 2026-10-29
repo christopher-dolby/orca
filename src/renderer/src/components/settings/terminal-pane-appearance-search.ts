@@ -53,7 +53,7 @@ const getTerminalOutputFoldingSearchEntries = createLocalizedCatalog(() => {
       title: translate('components.settings.TerminalInteraction.outputFolding', 'Output Folding'),
       description: translate(
         'components.settings.TerminalInteraction.outputFoldingDescription',
-        'Show a toggle on finished commands and agent turns in the scrollback to fold their output.'
+        'Show a toggle on Devin’s finished tool cards to fold the output they printed.'
       ),
       keywords
     },
@@ -64,7 +64,7 @@ const getTerminalOutputFoldingSearchEntries = createLocalizedCatalog(() => {
       ),
       description: translate(
         'components.settings.TerminalInteraction.outputAutoFoldDescription',
-        'Fold finished output as it scrolls off the screen. Click the toggle to expand it again.'
+        'Fold finished tool cards as soon as Devin prints them. Click the toggle to expand one again.'
       ),
       keywords: [
         ...keywords,

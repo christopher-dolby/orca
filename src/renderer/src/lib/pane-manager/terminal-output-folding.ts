@@ -1,18 +1,18 @@
 import type { IDecoration, IDisposable, Terminal } from '@xterm/xterm'
 import type { TerminalOutputFoldingSettings } from '../../../../shared/terminal-output-folding-settings'
 import { hasTerminalFoldApi, type TerminalFold } from './terminal-fold-api'
+import { findDevinInputBoxTop, findDevinToolCards } from './terminal-devin-tool-cards'
 import {
-  createTerminalOutputBlockTracker,
-  type TerminalOutputBlock
-} from './terminal-output-blocks'
-import { registerTerminalOutputFoldToggle } from './terminal-output-fold-toggle'
+  MIN_FOLDED_OUTPUT_LINES,
+  registerTerminalOutputFoldToggle
+} from './terminal-output-fold-toggle'
 
 export type { TerminalOutputFoldingSettings }
 
 export type TerminalOutputFolding = {
-  /** Called from the pane's OSC 133 parser handler, while the cursor is still on the marked line. */
-  handleOsc133: (payload: string) => void
   update: (settings: TerminalOutputFoldingSettings) => void
+  /** Card folds only run while this reports that the pane's agent is Devin. */
+  setDevinCheck: (isDevin: () => boolean) => void
   /** Expands every collapsed fold with a hidden line `matches` accepts; returns how many it expanded. */
   expandMatching: (matches: (line: string) => boolean) => number
   /** Stops tracking. Folds stay with the terminal, which must be disposed next. */
@@ -22,11 +22,12 @@ export type TerminalOutputFolding = {
 type FoldEntry = {
   fold: TerminalFold
   toggle: IDecoration | undefined
-  /** Keeps hiding the block's lines as they scroll into the scrollback. */
-  growing: boolean
   /** Expanded by the user or by find: automatic folding leaves it alone. */
   pinnedOpen: boolean
 }
+
+// Cards scroll past in one commit at most this tall; older rows were scanned while on screen.
+const SCAN_ROWS = 400
 
 const foldingByTerminal = new WeakMap<Terminal, TerminalOutputFolding>()
 
@@ -34,7 +35,7 @@ export function getTerminalOutputFolding(terminal: Terminal): TerminalOutputFold
   return foldingByTerminal.get(terminal)
 }
 
-/** Folds finished OSC 133 blocks (shell commands, agent turns). Null without Orca's patched xterm. */
+/** Folds the output of finished Devin tool cards. Null without Orca's patched xterm. */
 export function attachTerminalOutputFolding(
   terminal: Terminal,
   initialSettings: TerminalOutputFoldingSettings
@@ -43,54 +44,28 @@ export function attachTerminalOutputFolding(
     return null
   }
   let settings = initialSettings
+  let isDevin = (): boolean => false
   const entries = new Set<FoldEntry>()
-  let pending: TerminalOutputBlock[] = []
-  let workListeners: IDisposable[] | null = null
-  let running = false
+  let scannedAt = ''
 
-  const tracker = createTerminalOutputBlockTracker(terminal, (block) => {
-    pending.push(block)
-    scheduleWork()
-  })
-
-  const remainingRangeIsVisible = (fold: TerminalFold): boolean => {
+  const viewportShows = (fold: TerminalFold): boolean => {
     const buffer = terminal.buffer.normal
     if (buffer.viewportY >= buffer.baseY) {
       return false
     }
     const start = fold.marker.line + 1
-    const end = Math.min(start + fold.lineCount - fold.hiddenLineCount, buffer.baseY)
+    const end = start + fold.lineCount - fold.hiddenLineCount
     return start < buffer.viewportY + terminal.rows && end > buffer.viewportY
   }
 
-  const grow = (entry: FoldEntry): void => {
-    const { fold } = entry
-    // Never pull lines out from under a reader scrolled up into them; retry on the next scroll.
-    if (fold.isDisposed || remainingRangeIsVisible(fold)) {
-      return
-    }
-    fold.collapse()
-    if (fold.hiddenLineCount >= fold.lineCount) {
-      entry.growing = false
-    }
-  }
-
-  // Expanding fires onScroll synchronously, so mark the entry first or the work loop folds it again.
-  const pinOpen = (entry: FoldEntry): void => {
-    entry.pinnedOpen = true
-    entry.growing = false
-    entry.fold.expand()
-  }
-
+  // Expanding fires onScroll synchronously, so mark the entry before touching the fold.
   const toggle = (entry: FoldEntry): void => {
-    if (entry.fold.isCollapsed) {
-      pinOpen(entry)
-      return
+    entry.pinnedOpen = entry.fold.isCollapsed
+    if (entry.pinnedOpen) {
+      entry.fold.expand()
+    } else {
+      entry.fold.collapse()
     }
-    entry.pinnedOpen = false
-    entry.growing = true
-    entry.fold.collapse()
-    scheduleWork()
   }
 
   const addToggle = (entry: FoldEntry): void => {
@@ -98,125 +73,101 @@ export function attachTerminalOutputFolding(
     entry.toggle = registerTerminalOutputFoldToggle(terminal, entry.fold, () => toggle(entry))
   }
 
-  const register = (block: TerminalOutputBlock): void => {
-    const fold = terminal.registerFold(block.header, block.end)
-    // The fold keeps markers of its own.
-    block.header.dispose()
-    block.end.dispose()
+  const register = (header: number, footer: number): void => {
+    const buffer = terminal.buffer.normal
+    const cursor = buffer.baseY + buffer.cursorY
+    const headerMarker = terminal.registerMarker(header - cursor)
+    const footerMarker = terminal.registerMarker(footer - cursor)
+    // Devin commits finished cards above its live region and never rewrites them in place.
+    const fold = terminal.registerFold(headerMarker, footerMarker, { screen: true })
+    headerMarker.dispose()
+    footerMarker.dispose()
     if (!fold) {
       return
     }
-    const entry: FoldEntry = {
-      fold,
-      toggle: undefined,
-      growing: settings.autoCollapse,
-      pinnedOpen: false
-    }
+    const entry: FoldEntry = { fold, toggle: undefined, pinnedOpen: false }
     entries.add(entry)
     addToggle(entry)
     fold.onDispose(() => {
       entries.delete(entry)
       entry.toggle?.dispose()
     })
+    if (settings.autoCollapse && !viewportShows(fold)) {
+      fold.collapse()
+    }
   }
 
-  const hasWork = (): boolean => pending.length > 0 || [...entries].some((entry) => entry.growing)
-
-  const stopWork = (): void => {
-    workListeners?.forEach((listener) => listener.dispose())
-    workListeners = null
-  }
-
-  const run = (): void => {
-    // Collapsing fires onScroll synchronously.
-    if (running) {
+  const scan = (): void => {
+    const buffer = terminal.buffer.normal
+    if (!settings.enabled || terminal.buffer.active !== buffer || !isDevin()) {
       return
     }
-    running = true
-    try {
-      const blocks = pending
-      pending = []
-      blocks.forEach(register)
-      for (const entry of entries) {
-        if (entry.growing) {
-          grow(entry)
-        }
+    // Spinner frames repaint in place; only a commit moves the cursor line or grows the buffer.
+    const at = `${buffer.length}:${buffer.baseY + buffer.cursorY}`
+    if (at === scannedAt) {
+      return
+    }
+    scannedAt = at
+    const boxTop = findDevinInputBoxTop(buffer)
+    if (boxTop === null) {
+      return
+    }
+    const folded = new Set([...entries].map((entry) => entry.fold.marker.line))
+    for (const card of findDevinToolCards(buffer, Math.max(0, boxTop - SCAN_ROWS), boxTop)) {
+      if (card.footer - card.header - 1 >= MIN_FOLDED_OUTPUT_LINES && !folded.has(card.header)) {
+        register(card.header, card.footer)
       }
-    } finally {
-      running = false
     }
-    if (!hasWork()) {
-      stopWork()
-    }
-  }
-
-  // Listen only while blocks wait or folds grow, so idle output pays nothing.
-  function scheduleWork(): void {
-    workListeners ??= [terminal.onWriteParsed(run), terminal.onScroll(run)]
   }
 
   let toggleCols = terminal.cols
-  const resizeListener = terminal.onResize(({ cols }) => {
-    // Toggle columns are fixed at registration; place them again for the new width.
-    if (cols === toggleCols) {
-      return
-    }
-    toggleCols = cols
-    entries.forEach(addToggle)
-  })
-
-  const dropPending = (): void => {
-    for (const block of pending) {
-      block.header.dispose()
-      block.end.dispose()
-    }
-    pending = []
-  }
+  const listeners: IDisposable[] = [
+    terminal.onWriteParsed(scan),
+    terminal.onResize(({ cols }) => {
+      // Toggle columns are fixed at registration; place them again for the new width.
+      if (cols !== toggleCols) {
+        toggleCols = cols
+        entries.forEach(addToggle)
+      }
+    })
+  ]
 
   const folding: TerminalOutputFolding = {
-    handleOsc133(payload) {
-      if (settings.enabled) {
-        tracker.handleMark(payload)
-      }
-    },
     update(next) {
       const previous = settings
       settings = next
       if (!next.enabled) {
-        tracker.dispose()
-        dropPending()
-        stopWork()
         // Disposing a fold puts its hidden lines back.
         ;[...entries].forEach((entry) => entry.fold.dispose())
+        scannedAt = ''
         return
       }
-      if (next.autoCollapse === previous.autoCollapse) {
-        return
+      if (next.autoCollapse && !previous.autoCollapse) {
+        for (const entry of entries) {
+          if (!entry.pinnedOpen && !viewportShows(entry.fold)) {
+            entry.fold.collapse()
+          }
+        }
       }
-      for (const entry of entries) {
-        entry.growing = next.autoCollapse
-          ? !entry.pinnedOpen
-          : entry.growing && entry.fold.isCollapsed
-      }
-      if (next.autoCollapse) {
-        scheduleWork()
-      }
+      scan()
+    },
+    setDevinCheck(check) {
+      isDevin = check
+      scannedAt = ''
     },
     expandMatching(matches) {
       let expanded = 0
       for (const entry of entries) {
         if (entry.fold.isCollapsed && entry.fold.translateHiddenLines().some(matches)) {
-          pinOpen(entry)
+          entry.pinnedOpen = true
+          entry.fold.expand()
           expanded += 1
         }
       }
       return expanded
     },
     dispose() {
-      tracker.dispose()
-      dropPending()
-      stopWork()
-      resizeListener.dispose()
+      listeners.forEach((listener) => listener.dispose())
       entries.forEach((entry) => entry.toggle?.dispose())
       entries.clear()
       foldingByTerminal.delete(terminal)

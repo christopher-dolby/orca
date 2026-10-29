@@ -1,7 +1,9 @@
 import type { IDecoration, Terminal } from '@xterm/xterm'
 import { translate } from '@/i18n/i18n'
 import type { TerminalFold } from './terminal-fold-api'
-import { MIN_FOLDED_OUTPUT_LINES } from './terminal-output-blocks'
+
+// Fewer lines than this take about as much room folded as expanded.
+export const MIN_FOLDED_OUTPUT_LINES = 3
 
 // Room for "› 99,999 lines" in the toggle's smaller font.
 const TOGGLE_CELLS = 14
@@ -12,14 +14,11 @@ const CHEVRON_DOWN_PATH = 'm6 9 6 6 6-6'
 
 type ToggleState = 'collapsed' | 'expanded' | 'hidden'
 
-function resolveToggleState(terminal: Terminal, fold: TerminalFold): ToggleState {
+function resolveToggleState(fold: TerminalFold): ToggleState {
   if (fold.isCollapsed) {
     return 'collapsed'
   }
-  // A header on the live screen has nothing in the scrollback to hide yet.
-  const foldable =
-    fold.marker.line < terminal.buffer.normal.baseY && fold.lineCount >= MIN_FOLDED_OUTPUT_LINES
-  return foldable ? 'expanded' : 'hidden'
+  return fold.lineCount >= MIN_FOLDED_OUTPUT_LINES ? 'expanded' : 'hidden'
 }
 
 function createChevron(): SVGSVGElement {
@@ -101,7 +100,7 @@ export function registerTerminalOutputFoldToggle(
       button = createToggleButton(onToggle)
       element.appendChild(button)
     }
-    const state = resolveToggleState(terminal, fold)
+    const state = resolveToggleState(fold)
     // xterm fires onRender every frame the row is visible; touch the DOM only on change.
     const key = `${state}:${fold.hiddenLineCount}`
     if (key !== renderedKey) {

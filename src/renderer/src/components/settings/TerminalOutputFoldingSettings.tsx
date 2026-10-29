@@ -22,7 +22,7 @@ export function TerminalOutputFoldingSettings({
   )
   const foldingDescription = translate(
     'components.settings.TerminalInteraction.outputFoldingDescription',
-    'Show a toggle on finished commands and agent turns in the scrollback to fold their output.'
+    'Show a toggle on Devin’s finished tool cards to fold the output they printed.'
   )
   const autoFoldTitle = translate(
     'components.settings.TerminalInteraction.outputAutoFold',
@@ -30,7 +30,7 @@ export function TerminalOutputFoldingSettings({
   )
   const autoFoldDescription = translate(
     'components.settings.TerminalInteraction.outputAutoFoldDescription',
-    'Fold finished output as it scrolls off the screen. Click the toggle to expand it again.'
+    'Fold finished tool cards as soon as Devin prints them. Click the toggle to expand one again.'
   )
   return (
     <>

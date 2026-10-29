@@ -1,4 +1,5 @@
 import { agentTypeToIconAgent } from '@/lib/agent-status'
+import { getTerminalOutputFolding } from '@/lib/pane-manager/terminal-output-folding'
 import { dismissRetainedProgramResult } from '@/lib/program-status/result-retention'
 import { isRetainedProgramResult } from '@/lib/program-status/row'
 import { useAppStore } from '@/store'
@@ -319,4 +320,12 @@ export function installPaneAgentIdentity(session: ConnectPanePtySession): void {
   })
   // OSC 133 swallowing is rendering hygiene and stays installed under every side-effect authority.
   session.commandLifecycle.attachXtermConsumer(session.pane.terminal)
+  // Card folds parse Devin's tool-card layout, so they run only while Orca sees Devin in this pane.
+  getTerminalOutputFolding(session.pane.terminal)?.setDevinCheck(() => {
+    const state = useAppStore.getState()
+    return (
+      state.paneForegroundAgentByPaneKey[session.cacheKey]?.agent === 'devin' ||
+      agentTypeToIconAgent(state.agentStatusByPaneKey[session.cacheKey]?.agentType) === 'devin'
+    )
+  })
 }

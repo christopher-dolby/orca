@@ -1,6 +1,5 @@
 import type { Terminal, IDisposable } from '@xterm/xterm'
 import { createOsc133CommandFinishedScanner } from '../../../../shared/terminal-osc133-command-finished'
-import { getTerminalOutputFolding } from '@/lib/pane-manager/terminal-output-folding'
 
 type TerminalCommandLifecycleOptions = {
   onCommandFinished: (bestEffortExitCode: number | null) => void
@@ -23,11 +22,7 @@ export function createTerminalCommandLifecycle(options: TerminalCommandLifecycle
     handlePtyData: scanner.scan,
     attachXtermConsumer(terminal) {
       // Consume OSC 133 even without side-effect authority so integration markers never paint.
-      // Folding marks lines here, while the parser still has the cursor on the marked line.
-      const disposable = terminal.parser.registerOscHandler(133, (payload) => {
-        getTerminalOutputFolding(terminal)?.handleOsc133(payload)
-        return true
-      })
+      const disposable = terminal.parser.registerOscHandler(133, () => true)
       disposables.push(disposable)
       return disposable
     },

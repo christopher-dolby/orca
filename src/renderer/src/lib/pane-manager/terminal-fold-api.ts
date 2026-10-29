@@ -17,8 +17,16 @@ export type TerminalFold = IDisposable & {
 }
 
 type TerminalFoldHost = {
-  /** Folds the lines after `marker` up to, not including, `endMarker`; both must be normal-buffer markers. */
-  registerFold(marker: IMarker, endMarker: IMarker): TerminalFold | undefined
+  /**
+   * Folds the lines after `marker` up to, not including, `endMarker`; both must be normal-buffer
+   * markers. `screen` also hides screen lines above the cursor line, for output the program never
+   * rewrites; otherwise only scrollback lines are hidden.
+   */
+  registerFold(
+    marker: IMarker,
+    endMarker: IMarker,
+    options?: { screen?: boolean }
+  ): TerminalFold | undefined
   withFoldsExpanded<T>(callback: () => T): T
 }
 
