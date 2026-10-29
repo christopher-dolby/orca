@@ -8,6 +8,7 @@ import { SearchableSetting } from './SearchableSetting'
 import { matchesSettingsSearch } from './settings-search'
 import { getTerminalRightClickToPasteSearchEntry } from './terminal-windows-search'
 import { OSC52_CLIPBOARD_SETTING_ID } from '../terminal-pane/osc52-clipboard-setting-anchor'
+import { TerminalOutputFoldingSettings } from './TerminalOutputFoldingSettings'
 import { isMacPlatform } from '../terminal-pane/terminal-link-open-hints'
 import { translate } from '@/i18n/i18n'
 import {
@@ -312,6 +313,8 @@ export function TerminalInteractionSection({
             }
           />
         </SearchableSetting>
+
+        <TerminalOutputFoldingSettings settings={settings} updateSettings={updateSettings} />
 
         <SearchableSetting
           id={OSC52_CLIPBOARD_SETTING_ID}

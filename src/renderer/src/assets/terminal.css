@@ -556,3 +556,55 @@
   color: #a1a1aa;
   background: rgba(24, 24, 27, 0.85);
 }
+
+/* Output fold toggle: an xterm decoration on the fold's header row. Only the button takes clicks so
+   the rest of the row stays selectable. */
+.xterm .terminal-output-fold {
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.terminal-output-fold-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: min(18px, calc(100% - 2px));
+  padding: 0 6px 0 3px;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.terminal-output-fold-toggle[hidden] {
+  display: none;
+}
+
+.terminal-output-fold-toggle[data-state='expanded'] {
+  padding: 0 3px;
+  opacity: 0.6;
+}
+
+.terminal-output-fold-toggle:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  opacity: 1;
+}
+
+.terminal-output-fold-toggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.terminal-output-fold-toggle svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}

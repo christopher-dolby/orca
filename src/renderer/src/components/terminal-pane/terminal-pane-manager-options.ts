@@ -30,6 +30,7 @@ import {
 import { resolveTerminalLayoutActiveLeafId } from './terminal-layout-leaf-ids'
 import type { TerminalPaneManagerOptionsContext } from './terminal-pane-mount-context'
 import { resolveTerminalInlineImagesEnabled } from '../../../../shared/terminal-inline-images-settings'
+import { resolveTerminalOutputFoldingSettings } from '../../../../shared/terminal-output-folding-settings'
 import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../../../shared/layout-owner-switch'
 import { layoutOwnerPaneGestures } from './terminal-pane-layout-owner-gestures'
 
@@ -121,6 +122,7 @@ export function createTerminalPaneManagerOptions(
       ),
     terminalInlineImagesEnabled: () =>
       resolveTerminalInlineImagesEnabled(settingsRef.current?.terminalInlineImages),
+    terminalOutputFolding: () => resolveTerminalOutputFoldingSettings(settingsRef.current),
     terminalOptions: () => {
       const currentSettings = settingsRef.current
       const terminalFontWeights = resolveTerminalFontWeights(

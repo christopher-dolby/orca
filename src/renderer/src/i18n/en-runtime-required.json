@@ -767,8 +767,6 @@
         "stoppedBeforeStart": "Stopped manually"
       },
       "queuedMessages": {
-        "imageCount_one": "{{count}} image",
-        "imageCount_other": "{{count}} images",
         "editChanged": "This message changed while you were editing. Your edit is in the chat box.",
         "editChangedNotSaved": "This message changed while you were editing. Your edit wasn't saved.",
         "editChangedPrompt": "This message changed while you were editing. Your edit will be in the chat box after you answer the agent.",
@@ -932,6 +930,11 @@
         }
       }
     },
+    "settings": {
+      "TerminalInteraction": {
+        "outputFoldingDescription": "Show a toggle on Devin’s finished tool cards to fold the output they printed."
+      }
+    },
     "tab": {
       "bar": {
         "bulkClose": {
@@ -943,6 +946,12 @@
           "right": "Close tabs to the right?"
         }
       }
+    },
+    "terminalOutputFold": {
+      "expand_one": "Show {{count}} hidden line",
+      "expand_other": "Show {{count}} hidden lines",
+      "hiddenLines_one": "{{count}} line",
+      "hiddenLines_other": "{{count}} lines"
     },
     "workspace": {
       "delete": {

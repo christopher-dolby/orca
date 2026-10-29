@@ -11,6 +11,10 @@ import type { GlobalSettings } from '../../../../shared/global-settings-types'
 import type { TerminalLeafId } from '../../../../shared/stable-pane-id'
 import type { TerminalPanePlacement } from '../../../../shared/terminal-pane-placement'
 import type { TerminalWebglAutoDecision } from './terminal-webgl-auto-policy'
+import type {
+  TerminalOutputFolding,
+  TerminalOutputFoldingSettings
+} from './terminal-output-folding'
 
 export type { TerminalScrollIntentTarget } from './terminal-scroll-intent'
 
@@ -72,6 +76,7 @@ export type PaneManagerOptions = {
   terminalOptions?: (paneId: number) => Partial<ITerminalOptions>
   terminalLigaturesEnabled?: () => boolean
   terminalInlineImagesEnabled?: () => boolean
+  terminalOutputFolding?: () => TerminalOutputFoldingSettings
   terminalTuiScrollSensitivity?: () => number | undefined
   onLinkClick?: (paneId: number, event: MouseEvent | undefined, url: string) => void
   // Resolve hints per hover so settings stay current; require wiring at compile time, scoped to the hovered pane’s host routes.
@@ -163,6 +168,8 @@ export type ManagedPaneInternal = {
   ligaturesAddon: LigaturesAddon | null
   // Images are optional and lazy-loaded; null means disabled or not yet resolved.
   imageAddon: ImageAddon | null
+  // Null without Orca's patched xterm.
+  outputFolding?: TerminalOutputFolding | null
   // Enabled but waiting for the lazy addon; onLoaded drains these panes.
   imageAttachmentDeferred?: boolean
   fitResizeObserver: ResizeObserver | null

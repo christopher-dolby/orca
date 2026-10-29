@@ -18968,7 +18968,11 @@
       "TerminalInteraction": {
         "copyTrimsGutter": "Trim Gutter on Copy",
         "copyTrimsGutterDescription": "Drop the left gutter agent output is painted behind, so copied text is not indented. Only the indent every selected line shares is removed.",
-        "copyOnSelectDescription": "Automatically copy text you select in a terminal or chat to the clipboard."
+        "copyOnSelectDescription": "Automatically copy text you select in a terminal or chat to the clipboard.",
+        "outputFolding": "Output Folding",
+        "outputFoldingDescription": "Show a toggle on Devin’s finished tool cards to fold the output they printed.",
+        "outputAutoFold": "Fold Output Automatically",
+        "outputAutoFoldDescription": "Fold finished tool cards as soon as Devin prints them. Click the toggle to expand one again."
       },
       "terminal": {
         "clipboard": {
@@ -18982,6 +18986,15 @@
             "leading": "leading",
             "whitespace": "whitespace",
             "spaces": "spaces"
+          }
+        },
+        "search": {
+          "outputFold": {
+            "fold": "fold",
+            "collapse": "collapse",
+            "output": "output",
+            "scrollback": "scrollback",
+            "automatic": "automatic"
           }
         }
       },
@@ -19104,6 +19117,15 @@
       "stepDownload": "Download",
       "stepUnpack": "Unpack",
       "stepCheck": "Check"
+    },
+    "terminalOutputFold": {
+      "expand": "Show {{count}} hidden lines",
+      "expand_one": "Show {{count}} hidden line",
+      "expand_other": "Show {{count}} hidden lines",
+      "collapse": "Fold output",
+      "hiddenLines": "{{count}} lines",
+      "hiddenLines_one": "{{count}} line",
+      "hiddenLines_other": "{{count}} lines"
     }
   },
   "dashboardPopout": {

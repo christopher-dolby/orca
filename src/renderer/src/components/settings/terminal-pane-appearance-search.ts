@@ -33,6 +33,50 @@ export const getTerminalPaneAppearanceSearchEntries = createLocalizedCatalog(() 
   }
 ])
 
+const getTerminalOutputFoldingSearchEntries = createLocalizedCatalog(() => {
+  const keywords = [
+    ...translateSearchKeyword('components.settings.terminal.search.outputFold.fold', 'fold'),
+    ...translateSearchKeyword(
+      'components.settings.terminal.search.outputFold.collapse',
+      'collapse'
+    ),
+    ...translateSearchKeyword('components.settings.terminal.search.outputFold.output', 'output'),
+    ...translateSearchKeyword('auto.components.settings.terminal.search.command', 'command'),
+    ...translateSearchKeyword('auto.components.settings.terminal.search.agent', 'agent'),
+    ...translateSearchKeyword(
+      'components.settings.terminal.search.outputFold.scrollback',
+      'scrollback'
+    )
+  ]
+  return [
+    {
+      title: translate('components.settings.TerminalInteraction.outputFolding', 'Output Folding'),
+      description: translate(
+        'components.settings.TerminalInteraction.outputFoldingDescription',
+        'Show a toggle on Devin’s finished tool cards to fold the output they printed.'
+      ),
+      keywords
+    },
+    {
+      title: translate(
+        'components.settings.TerminalInteraction.outputAutoFold',
+        'Fold Output Automatically'
+      ),
+      description: translate(
+        'components.settings.TerminalInteraction.outputAutoFoldDescription',
+        'Fold finished tool cards as soon as Devin prints them. Click the toggle to expand one again.'
+      ),
+      keywords: [
+        ...keywords,
+        ...translateSearchKeyword(
+          'components.settings.terminal.search.outputFold.automatic',
+          'automatic'
+        )
+      ]
+    }
+  ]
+})
+
 export const getTerminalPaneInteractionSearchEntries = createLocalizedCatalog(() => [
   {
     title: translate('auto.components.settings.terminal.search.scrollSpeed.title', 'Scroll Speed'),
@@ -91,5 +135,6 @@ export const getTerminalPaneInteractionSearchEntries = createLocalizedCatalog(()
       ...translateSearchKeyword('auto.components.settings.terminal.search.f036794286', 'active')
     ]
   },
-  ...getTerminalClipboardSearchEntries()
+  ...getTerminalClipboardSearchEntries(),
+  ...getTerminalOutputFoldingSearchEntries()
 ])
